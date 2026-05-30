@@ -1,5 +1,6 @@
-import win32gui, win32api, win32con, win32process
-import string, random, time
+import platform
+import subprocess
+import time
 from memory.api import Memopy
 from utils import GetRenderViewFromLog
 
@@ -8,14 +9,33 @@ Process = Memopy(0)
 
 def fetch_roblox_pid():
     global Window, Process
+    system = platform.system()
 
-    Window = win32gui.FindWindow(None, "Roblox")
-    ProcessId = win32process.GetWindowThreadProcessId(Window)[1]
+    if system == "Windows":
+        import win32gui, win32process
 
-    return ProcessId
+        Window = win32gui.FindWindow(None, "Roblox")
+        if not Window:
+            return None
+
+        ProcessId = win32process.GetWindowThreadProcessId(Window)[1]
+        return ProcessId
+
+    if system == "Darwin":
+        try:
+            pgrep_output = subprocess.check_output(["pgrep", "-x", "Roblox"], text=True)
+            first_pid = pgrep_output.strip().splitlines()[0]
+            return int(first_pid)
+        except (subprocess.CalledProcessError, IndexError, ValueError):
+            return None
+
+    return None
 
 def initialize():
     ProcessId = fetch_roblox_pid()
+    if not ProcessId:
+        return False, -1
+
     Process.update_pid(ProcessId)
 
     if not Process.process_handle:
@@ -24,24 +44,30 @@ def initialize():
     return True, ProcessId
 
 def main():
+    system = platform.system()
+    if system not in {"Windows", "Darwin"}:
+        print(f"[-] Unsupported platform: {system}")
+        return
+
     print("[+] Finding Roblox...")
     success, pid = initialize()
     if success:
-        print("[+] Found Roblox: "+str(pid))
+        print("[+] Found Roblox: " + str(pid))
 
         time.sleep(1)
 
         print("[+] Getting DataModel...")
-       # Process.suspend()
 
         RenderView = GetRenderViewFromLog()
+        if not RenderView:
+            print("[-] Failed to read RenderView from logs")
+            return
 
         datamodel_ptr = Process.read_longlong(RenderView + 0x118)
         datamodel = Process.read_longlong(datamodel_ptr + 0x198)
 
         print("[+] Found DataModel: " + hex(datamodel))
 
-       # Process.resume()
         time.sleep(1)
 
         print("[+] Dumping...")
